@@ -13,7 +13,7 @@
   | @link     https://www.swoole.com/                                    |
   | @contact  team@swoole.com                                            |
   | @license  https://github.com/swoole/swoole-src/blob/master/LICENSE   |
-  | @author   Tianfeng Han  <mikan.tenny@gmail.com>                      |
+  | @Author   Tianfeng Han  <rango@swoole.com>                           |
   +----------------------------------------------------------------------+
 */
 
@@ -808,7 +808,7 @@ ssize_t Socket::recv(void *__buf, size_t __n) {
     TimerController timer(&read_timer, read_timeout, this, timer_callback);
     do {
         retval = socket->recv(__buf, __n, 0);
-    } while (retval < 0 && socket->catch_error(errno) == SW_WAIT && timer.start() && wait_event(SW_EVENT_READ));
+    } while (retval < 0 && socket->catch_read_error(errno) == SW_WAIT && timer.start() && wait_event(SW_EVENT_READ));
     check_return_value(retval);
     return retval;
 }
@@ -821,7 +821,7 @@ ssize_t Socket::send(const void *__buf, size_t __n) {
     TimerController timer(&write_timer, write_timeout, this, timer_callback);
     do {
         retval = socket->send(__buf, __n, 0);
-    } while (retval < 0 && socket->catch_error(errno) == SW_WAIT && timer.start() &&
+    } while (retval < 0 && socket->catch_write_error(errno) == SW_WAIT && timer.start() &&
              wait_event(SW_EVENT_WRITE, &__buf, __n));
     check_return_value(retval);
     return retval;
@@ -835,7 +835,7 @@ ssize_t Socket::read(void *__buf, size_t __n) {
     TimerController timer(&read_timer, read_timeout, this, timer_callback);
     do {
         retval = socket->read(__buf, __n);
-    } while (retval < 0 && socket->catch_error(errno) == SW_WAIT && timer.start() && wait_event(SW_EVENT_READ));
+    } while (retval < 0 && socket->catch_read_error(errno) == SW_WAIT && timer.start() && wait_event(SW_EVENT_READ));
     check_return_value(retval);
     return retval;
 }
@@ -910,7 +910,7 @@ ssize_t Socket::write(const void *__buf, size_t __n) {
     TimerController timer(&write_timer, write_timeout, this, timer_callback);
     do {
         retval = socket->write((void *) __buf, __n);
-    } while (retval < 0 && socket->catch_error(errno) == SW_WAIT && timer.start() &&
+    } while (retval < 0 && socket->catch_write_error(errno) == SW_WAIT && timer.start() &&
              wait_event(SW_EVENT_WRITE, &__buf, __n));
     check_return_value(retval);
     return retval;
@@ -924,7 +924,7 @@ ssize_t Socket::readv(network::IOVector *io_vector) {
     TimerController timer(&read_timer, read_timeout, this, timer_callback);
     do {
         retval = socket->readv(io_vector);
-    } while (retval < 0 && socket->catch_error(errno) == SW_WAIT && timer.start() && wait_event(SW_EVENT_READ));
+    } while (retval < 0 && socket->catch_read_error(errno) == SW_WAIT && timer.start() && wait_event(SW_EVENT_READ));
     check_return_value(retval);
 
     return retval;
@@ -940,7 +940,7 @@ ssize_t Socket::readv_all(network::IOVector *io_vector) {
     retval = socket->readv(io_vector);
     swoole_trace_log(SW_TRACE_SOCKET, "readv %ld bytes, errno=%d", retval, errno);
 
-    if (retval < 0 && socket->catch_error(errno) != SW_WAIT) {
+    if (retval < 0 && socket->catch_read_error(errno) != SW_WAIT) {
         set_err(errno);
         return retval;
     }
@@ -966,7 +966,7 @@ ssize_t Socket::readv_all(network::IOVector *io_vector) {
             total_bytes += retval;
         } while (retval > 0 && io_vector->get_remain_count() > 0);
 
-        return retval < 0 && socket->catch_error(errno) == SW_WAIT;
+        return retval < 0 && socket->catch_read_error(errno) == SW_WAIT;
     };
 
     recv_barrier = &barrier;
@@ -986,7 +986,7 @@ ssize_t Socket::writev(network::IOVector *io_vector) {
     TimerController timer(&write_timer, write_timeout, this, timer_callback);
     do {
         retval = socket->writev(io_vector);
-    } while (retval < 0 && socket->catch_error(errno) == SW_WAIT && timer.start() && wait_event(SW_EVENT_WRITE));
+    } while (retval < 0 && socket->catch_write_error(errno) == SW_WAIT && timer.start() && wait_event(SW_EVENT_WRITE));
     check_return_value(retval);
 
     return retval;
@@ -1002,7 +1002,7 @@ ssize_t Socket::writev_all(network::IOVector *io_vector) {
     retval = socket->writev(io_vector);
     swoole_trace_log(SW_TRACE_SOCKET, "writev %ld bytes, errno=%d", retval, errno);
 
-    if (retval < 0 && socket->catch_error(errno) != SW_WAIT) {
+    if (retval < 0 && socket->catch_write_error(errno) != SW_WAIT) {
         set_err(errno);
         return retval;
     }
@@ -1028,7 +1028,7 @@ ssize_t Socket::writev_all(network::IOVector *io_vector) {
             total_bytes += retval;
         } while (retval > 0 && io_vector->get_remain_count() > 0);
 
-        return retval < 0 && socket->catch_error(errno) == SW_WAIT;
+        return retval < 0 && socket->catch_write_error(errno) == SW_WAIT;
     };
 
     send_barrier = &barrier;
@@ -1053,7 +1053,7 @@ ssize_t Socket::recv_all(void *__buf, size_t __n) {
     if (retval == 0 || retval == (ssize_t) __n) {
         return retval;
     }
-    if (retval < 0 && socket->catch_error(errno) != SW_WAIT) {
+    if (retval < 0 && socket->catch_read_error(errno) != SW_WAIT) {
         set_err(errno);
         return retval;
     }
@@ -1063,7 +1063,8 @@ ssize_t Socket::recv_all(void *__buf, size_t __n) {
 
     EventBarrier barrier = [&__n, &total_bytes, &retval, &__buf, this]() -> bool {
         retval = socket->recv((char *) __buf + total_bytes, __n - total_bytes, 0);
-        return (retval < 0 && socket->catch_error(errno) == SW_WAIT) || (retval > 0 && (total_bytes += retval) < __n);
+        return (retval < 0 && socket->catch_read_error(errno) == SW_WAIT) ||
+               (retval > 0 && (total_bytes += retval) < __n);
     };
 
     recv_barrier = &barrier;
@@ -1088,7 +1089,7 @@ ssize_t Socket::send_all(const void *__buf, size_t __n) {
     if (retval == 0 || retval == (ssize_t) __n) {
         return retval;
     }
-    if (retval < 0 && socket->catch_error(errno) != SW_WAIT) {
+    if (retval < 0 && socket->catch_write_error(errno) != SW_WAIT) {
         set_err(errno);
         return retval;
     }
@@ -1098,7 +1099,8 @@ ssize_t Socket::send_all(const void *__buf, size_t __n) {
 
     EventBarrier barrier = [&__n, &total_bytes, &retval, &__buf, this]() -> bool {
         retval = socket->send((char *) __buf + total_bytes, __n - total_bytes, 0);
-        return (retval < 0 && socket->catch_error(errno) == SW_WAIT) || (retval > 0 && (total_bytes += retval) < __n);
+        return (retval < 0 && socket->catch_write_error(errno) == SW_WAIT) ||
+               (retval > 0 && (total_bytes += retval) < __n);
     };
 
     send_barrier = &barrier;
@@ -1118,7 +1120,7 @@ ssize_t Socket::recvmsg(struct msghdr *msg, int flags) {
     TimerController timer(&read_timer, read_timeout, this, timer_callback);
     do {
         retval = ::recvmsg(sock_fd, msg, flags);
-    } while (retval < 0 && socket->catch_error(errno) == SW_WAIT && timer.start() && wait_event(SW_EVENT_READ));
+    } while (retval < 0 && socket->catch_read_error(errno) == SW_WAIT && timer.start() && wait_event(SW_EVENT_READ));
     check_return_value(retval);
     return retval;
 }
@@ -1134,7 +1136,7 @@ ssize_t Socket::sendmsg(const struct msghdr *msg, int flags) {
     TimerController timer(&write_timer, write_timeout, this, timer_callback);
     do {
         retval = ::sendmsg(sock_fd, msg, flags);
-    } while (retval < 0 && socket->catch_error(errno) == SW_WAIT && timer.start() && wait_event(SW_EVENT_WRITE));
+    } while (retval < 0 && socket->catch_write_error(errno) == SW_WAIT && timer.start() && wait_event(SW_EVENT_WRITE));
     check_return_value(retval);
     return retval;
 }
@@ -1445,7 +1447,7 @@ ssize_t Socket::sendto(const std::string &host, int port, const void *__buf, siz
         do {
             retval = ::sendto(sock_fd, __buf, __n, 0, (struct sockaddr *) &addr, addr_size);
             swoole_trace_log(SW_TRACE_SOCKET, "sendto %ld/%ld bytes, errno=%d", retval, __n, errno);
-        } while (retval < 0 && (errno == EINTR || (socket->catch_error(errno) == SW_WAIT && timer.start() &&
+        } while (retval < 0 && (errno == EINTR || (socket->catch_write_error(errno) == SW_WAIT && timer.start() &&
                                                    wait_event(SW_EVENT_WRITE, &__buf, __n))));
         check_return_value(retval);
     }
@@ -1470,8 +1472,8 @@ ssize_t Socket::recvfrom(void *__buf, size_t __n, struct sockaddr *_addr, sockle
     do {
         retval = ::recvfrom(sock_fd, __buf, __n, 0, _addr, _socklen);
         swoole_trace_log(SW_TRACE_SOCKET, "recvfrom %ld/%ld bytes, errno=%d", retval, __n, errno);
-    } while (retval < 0 && ((errno == EINTR) ||
-                            (socket->catch_error(errno) == SW_WAIT && timer.start() && wait_event(SW_EVENT_READ))));
+    } while (retval < 0 && ((errno == EINTR) || (socket->catch_read_error(errno) == SW_WAIT && timer.start() &&
+                                                 wait_event(SW_EVENT_READ))));
     check_return_value(retval);
     return retval;
 }
@@ -1479,6 +1481,7 @@ ssize_t Socket::recvfrom(void *__buf, size_t __n, struct sockaddr *_addr, sockle
 ssize_t Socket::recv_packet_with_length_protocol() {
     ssize_t packet_len = SW_BUFFER_SIZE_STD;
     ssize_t retval;
+    PacketLength pl;
     uint32_t header_len = protocol.package_length_offset + protocol.package_length_size;
 
     if (read_buffer->length > 0) {
@@ -1500,15 +1503,17 @@ _recv_header:
     }
 
 _get_length:
-    protocol.real_header_length = 0;
-    packet_len = protocol.get_package_length(&protocol, socket, read_buffer->str, (uint32_t) read_buffer->length);
+    pl.header_len = 0;
+    pl.buf = read_buffer->str;
+    pl.buf_size = (uint32_t) read_buffer->length;
+    packet_len = protocol.get_package_length(&protocol, socket, &pl);
     swoole_trace_log(SW_TRACE_SOCKET, "packet_len=%ld, length=%ld", packet_len, read_buffer->length);
     if (packet_len < 0) {
         set_err(SW_ERROR_PACKAGE_LENGTH_NOT_FOUND, "get package length failed");
         return 0;
     } else if (packet_len == 0) {
-        if (protocol.real_header_length != 0) {
-            header_len = protocol.real_header_length;
+        if (pl.header_len != 0) {
+            header_len = pl.header_len;
         }
         goto _recv_header;
     } else if (packet_len > protocol.package_max_length) {

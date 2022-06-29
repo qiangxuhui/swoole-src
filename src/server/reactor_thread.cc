@@ -10,7 +10,7 @@
  | to obtain it through the world-wide-web, please send a note to       |
  | license@swoole.com so we can mail you a copy immediately.            |
  +----------------------------------------------------------------------+
- | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+ | Author: Tianfeng Han  <rango@swoole.com>                             |
  +----------------------------------------------------------------------+
  */
 
@@ -380,8 +380,7 @@ static int ReactorThread_onPipeRead(Reactor *reactor, Event *ev) {
             auto packet = thread->message_bus.get_packet();
             serv->call_command_callback(resp->info.fd, std::string(packet.data, packet.length));
             return SW_OK;
-        }
-        else if (resp->info.type == SW_SERVER_EVENT_SHUTDOWN) {
+        } else if (resp->info.type == SW_SERVER_EVENT_SHUTDOWN) {
             ReactorThread_shutdown(reactor);
         } else if (resp->info.type == SW_SERVER_EVENT_CLOSE_FORCE) {
             SessionId session_id = resp->info.fd;
@@ -465,7 +464,7 @@ static int ReactorThread_onPipeWrite(Reactor *reactor, Event *ev) {
 
         ret = ev->socket->send(chunk->value.ptr, chunk->length, 0);
         if (ret < 0) {
-            return (ev->socket->catch_error(errno) == SW_WAIT) ? SW_OK : SW_ERR;
+            return (ev->socket->catch_write_error(errno) == SW_WAIT) ? SW_OK : SW_ERR;
         } else {
             buffer->pop();
         }
@@ -1028,7 +1027,7 @@ void Server::start_heartbeat_thread() {
         swoole_signal_block_all();
 
         SwooleTG.type = THREAD_HEARTBEAT;
-        SwooleTG.id = reactor_num;
+        SwooleTG.id = reactor_num + 1;
 
         while (running) {
             double now = microtime();

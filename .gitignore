@@ -107,3 +107,6 @@ core-tests/samples/CMakeFiles/
 *.info
 /html
 /tests/include/lib/vendor/
+/tests/include/lib/composer.lock
+/core-tests/fuzz/fuzz_results/
+/core-tests/fuzz/bin/

@@ -364,7 +364,7 @@ NO_PROC_OPEN_ERROR;
         'ignore_repeated_errors=0',
         'precision=14',
         'serialize_precision=-1',
-        'memory_limit=128M',
+        'memory_limit=1024M',
         'log_errors_max_len=0',
         'opcache.fast_shutdown=0',
         'opcache.file_update_protection=0',
@@ -695,7 +695,7 @@ NO_PROC_OPEN_ERROR;
         $environment['TEST_PHP_EXECUTABLE'] = $php;
     }
 
-    if (strlen($conf_passed)) {
+    if ($conf_passed && strlen($conf_passed)) {
         if (IS_WINDOWS) {
             $pass_options .= " -c " . escapeshellarg($conf_passed);
         } else {
@@ -1310,6 +1310,12 @@ function system_with_timeout($commandline, $env = null, $stdin = null, $captureS
                 break;
             }
             $data .= $line;
+            if (strlen($data) > SWOOLE_TEST_OUTPUT_MAX_SIZE) {
+                echo "FATAL ERROR: The output content exceeds the maximum size\n";
+                echo "========================================================\n";
+                echo substr($data, 0, 65536);
+                exit(253);
+            }
         }
     }
 
@@ -3769,6 +3775,7 @@ define('SWOOLE_COLOR_BLUE', 4);
 define('SWOOLE_COLOR_MAGENTA', 5);
 define('SWOOLE_COLOR_CYAN', 6);
 define('SWOOLE_COLOR_WHITE', 7);
+define('SWOOLE_TEST_OUTPUT_MAX_SIZE', 64 * 1024 * 1024);
 // swoole patch: libc check
 define('SWOOLE_IS_MUSL_LIBC', !empty(`ldd 2>&1 | grep -i musl`));
 

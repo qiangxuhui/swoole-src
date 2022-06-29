@@ -13,7 +13,7 @@
   | @link     https://www.swoole.com/                                    |
   | @contact  team@swoole.com                                            |
   | @license  https://github.com/swoole/swoole-src/blob/master/LICENSE   |
-  | @author   Tianfeng Han  <mikan.tenny@gmail.com>                      |
+  | @Author   Tianfeng Han  <rango@swoole.com>                           |
   +----------------------------------------------------------------------+
 */
 
@@ -79,6 +79,22 @@ TEST(coroutine_system, flock) {
 
     swoole_event_wait();
     unlink(test_file);
+}
+
+TEST(coroutine_system, flock_nb) {
+    coroutine::run([&](void *arg) {
+        int fd = swoole_coroutine_open(test_file, File::WRITE | File::CREATE, 0666);
+        ASSERT_EQ(swoole_coroutine_flock_ex(test_file, fd, LOCK_EX | LOCK_NB), 0);
+
+        swoole::Coroutine::create([&](void *arg) {
+            ASSERT_EQ(swoole_coroutine_flock_ex(test_file, fd, LOCK_EX), 0);
+            ASSERT_EQ(swoole_coroutine_flock_ex(test_file, fd, LOCK_UN), 0);
+            swoole_coroutine_close(fd);
+            unlink(test_file);
+        });
+
+        ASSERT_EQ(swoole_coroutine_flock_ex(test_file, fd, LOCK_UN), 0);
+    });
 }
 
 TEST(coroutine_system, cancel_sleep) {
@@ -181,5 +197,78 @@ TEST(coroutine_system, wait_event_writable) {
         }
         tg_buf->append('\0');
         EXPECT_STREQ(sw_tg_buffer()->value(), str.value());
+    });
+}
+
+TEST(coroutine_system, swoole_stream_select) {
+    UnixSocket p(true, SOCK_STREAM);
+    std::unordered_map<int, swoole::coroutine::PollSocket> fds;
+    fds.emplace(std::make_pair(p.get_socket(false)->fd, swoole::coroutine::PollSocket(SW_EVENT_READ, nullptr)));
+
+    test::coroutine::run([&](void *arg) {
+        // try timeout to trigger socket_poll_timeout function
+        ASSERT_FALSE(System::socket_poll(fds, 0.5));
+    });
+
+    // start normal process
+    test::coroutine::run([&](void *arg) {
+        std::string text = "Hello world";
+        size_t len = text.length();
+
+        // child pipe
+        Coroutine::create([&](void *) {
+            System::sleep(0.05);
+            auto pipe_sock = p.get_socket(true);
+            const char *ptr = text.c_str();
+            ASSERT_EQ(pipe_sock->write(ptr, len), len);
+        });
+
+        // master pipe
+        bool result = System::socket_poll(fds, 0.5);
+        ASSERT_TRUE(result);
+
+        char buffer[128];
+        auto pipe_sock = p.get_socket(false);
+        ssize_t retval = pipe_sock->read(buffer, sizeof(buffer));
+        buffer[retval] = '\0';
+
+        ASSERT_EQ(retval, len);
+        const char *ptr = text.c_str();
+        ASSERT_STREQ(ptr, buffer);
+    });
+}
+
+TEST(coroutine_system, timeout_is_zero) {
+    UnixSocket p(true, SOCK_STREAM);
+    std::unordered_map<int, swoole::coroutine::PollSocket> fds;
+    fds.emplace(std::make_pair(p.get_socket(false)->fd, swoole::coroutine::PollSocket(SW_EVENT_READ, nullptr)));
+
+    // timeout is 0
+    test::coroutine::run([&](void *arg) {
+        std::string text = "Hello world";
+        size_t len = text.length();
+
+        // child pipe
+        Coroutine::create([&](void *) {
+            auto pipe_sock = p.get_socket(true);
+            const char *ptr = text.c_str();
+            ASSERT_EQ(pipe_sock->write(ptr, len), len);
+        });
+
+        // master pipe
+        bool result = System::socket_poll(fds, 0);
+        ASSERT_TRUE(result);
+
+        // child pipe
+        Coroutine::create([&](void *) {
+            auto pipe_sock = p.get_socket(true);
+            const char *ptr = text.c_str();
+            ASSERT_EQ(pipe_sock->write(ptr, len), len);
+        });
+
+        // master pipe
+        auto pipe_sock = p.get_socket(false);
+        result = System::wait_event(pipe_sock->get_fd(), SW_EVENT_READ, 0);
+        ASSERT_TRUE(result);
     });
 }

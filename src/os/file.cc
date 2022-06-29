@@ -10,7 +10,7 @@
  | to obtain it through the world-wide-web, please send a note to       |
  | license@swoole.com so we can mail you a copy immediately.            |
  +----------------------------------------------------------------------+
- | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+ | Author: Tianfeng Han  <rango@swoole.com>                             |
  +----------------------------------------------------------------------+
  */
 
@@ -111,6 +111,10 @@ bool file_put_contents(const std::string &filename, const char *content, size_t 
         return false;
     }
     return file.write_all(content, length);
+}
+
+bool file_exists(const std::string &filename) {
+    return access(filename.c_str(), F_OK) == 0;
 }
 
 size_t File::write_all(const void *data, size_t len) {

@@ -10,7 +10,7 @@
   | to obtain it through the world-wide-web, please send a note to       |
   | license@swoole.com so we can mail you a copy immediately.            |
   +----------------------------------------------------------------------+
-  | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+  | Author: Tianfeng Han  <rango@swoole.com>                             |
   +----------------------------------------------------------------------+
 */
 
@@ -53,8 +53,7 @@ bool ListenPort::ssl_add_sni_cert(const std::string &name, SSLContext *ctx) {
     return true;
 }
 
-static bool ssl_matches_wildcard_name(const char *subjectname, const char *certname) /* {{{ */
-{
+static bool ssl_matches_wildcard_name(const char *subjectname, const char *certname) {
     const char *wildcard = NULL;
     ptrdiff_t prefix_len;
     size_t suffix_len, subject_len;
@@ -320,7 +319,7 @@ static int Port_onRead_raw(Reactor *reactor, ListenPort *port, Event *event) {
 
     n = _socket->recv(buffer->str, buffer->size, 0);
     if (n < 0) {
-        switch (_socket->catch_error(errno)) {
+        switch (_socket->catch_read_error(errno)) {
         case SW_ERROR:
             swoole_sys_warning("recv from connection#%d failed", event->fd);
             return SW_OK;
@@ -382,7 +381,7 @@ static int Port_onRead_http(Reactor *reactor, ListenPort *port, Event *event) {
     Socket *_socket = event->socket;
     Connection *conn = (Connection *) _socket->object;
     Server *serv = (Server *) reactor->ptr;
-    RecvData dispatch_data {};
+    RecvData dispatch_data{};
 
     if (conn->websocket_status >= websocket::STATUS_HANDSHAKE) {
         if (conn->http_upgrade == 0) {
@@ -422,7 +421,7 @@ static int Port_onRead_http(Reactor *reactor, ListenPort *port, Event *event) {
 _recv_data:
     ssize_t n = _socket->recv(buffer->str + buffer->length, buffer->size - buffer->length, 0);
     if (n < 0) {
-        switch (_socket->catch_error(errno)) {
+        switch (_socket->catch_read_error(errno)) {
         case SW_ERROR:
             swoole_sys_warning("recv from connection#%d failed", event->fd);
             return SW_OK;
@@ -516,17 +515,47 @@ _parse:
     if (!request->header_parsed) {
         request->parse_header_info();
         swoole_trace_log(SW_TRACE_SERVER,
-                         "content-length=%u, keep-alive=%u, chunked=%u",
+                         "content-length=%" PRIu64 ", keep-alive=%u, chunked=%u",
                          request->content_length_,
                          request->keep_alive,
                          request->chunked);
+        if (request->form_data_) {
+            if (serv->upload_max_filesize > 0
+                    && request->header_length_ + request->content_length_ > protocol->package_max_length) {
+                request->init_multipart_parser(serv);
+                buffer = request->buffer_;
+            } else {
+                delete request->form_data_;
+                request->form_data_ = nullptr;
+            }
+        }
+    }
+
+    if (request->form_data_) {
+        if (!request->multipart_header_parsed && memmem(buffer->str, buffer->length, SW_STRL("\r\n\r\n")) == nullptr) {
+            return SW_OK;
+        }
+        if (!request->parse_multipart_data(buffer)) {
+            goto _bad_request;
+        }
+        if (request->too_large || request->form_data_->multipart_buffer_->length > protocol->package_max_length) {
+            goto _too_large;
+        }
+        if (request->excepted) {
+            goto _unavailable;
+        }
+        if (!request->tried_to_dispatch) {
+            return SW_OK;
+        }
+        request->destroy_multipart_parser();
+        buffer = request->buffer_;
     }
 
     // content length (equal to 0) or (field not found but not chunked)
     if (!request->tried_to_dispatch) {
         // recv nobody_chunked eof
         if (request->nobody_chunked) {
-            if (buffer->length < request->header_length_ + (sizeof("0\r\n\r\n") - 1)) {
+            if (buffer->length < request->header_length_ + (sizeof(SW_HTTP_CHUNK_EOF) - 1)) {
                 goto _recv_data;
             }
             request->header_length_ += (sizeof("0\r\n\r\n") - 1);
@@ -591,13 +620,15 @@ _parse:
         } else {
             request_length = request->header_length_ + request->content_length_;
         }
-        swoole_trace_log(SW_TRACE_SERVER, "received chunked eof, real content-length=%u", request->content_length_);
+        swoole_trace_log(
+            SW_TRACE_SERVER, "received chunked eof, real content-length=%" PRIu64, request->content_length_);
     } else {
         request_length = request->header_length_ + request->content_length_;
         if (request_length > protocol->package_max_length) {
             swoole_error_log(SW_LOG_WARNING,
                              SW_ERROR_HTTP_INVALID_PROTOCOL,
-                             "Request Entity Too Large: header-length (%u) + content-length (%u) is greater than the "
+                             "Request Entity Too Large: header-length (%u) + content-length (%" PRIu64
+                             ") is greater than the "
                              "package_max_length(%u)" CLIENT_INFO_FMT,
                              request->header_length_,
                              request->content_length_,

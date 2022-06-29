@@ -12,7 +12,7 @@
  | to obtain it through the world-wide-web, please send a note to       |
  | license@swoole.com so we can mail you a copy immediately.            |
  +----------------------------------------------------------------------+
- | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+ | Author: Tianfeng Han  <rango@swoole.com>                             |
  +----------------------------------------------------------------------+
  */
 
@@ -50,6 +50,7 @@ enum php_swoole_server_port_callback_type {
     SW_SERVER_CB_onPacket,       // dgram, worker(event)
     SW_SERVER_CB_onRequest,      // http, worker(event)
     SW_SERVER_CB_onHandShake,    // websocket, worker(event)
+    SW_SERVER_CB_onBeforeHandShakeResponse,// websocket, worker(event)
     SW_SERVER_CB_onOpen,         // websocket, worker(event)
     SW_SERVER_CB_onMessage,      // websocket, worker(event)
     SW_SERVER_CB_onDisconnect,   // websocket (non websocket connection), worker(event)

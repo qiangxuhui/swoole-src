@@ -10,7 +10,7 @@
   | to obtain it through the world-wide-web, please send a note to       |
   | license@swoole.com so we can mail you a copy immediately.            |
   +----------------------------------------------------------------------+
-  | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+  | Author: Tianfeng Han  <rango@swoole.com>                             |
   |         Twosee  <twose@qq.com>                                       |
   +----------------------------------------------------------------------+
 */
@@ -104,6 +104,7 @@ class Reactor {
         EXIT_CONDITION_AIO_TASK,
         EXIT_CONDITION_SIGNALFD,
         EXIT_CONDITION_USER_BEFORE_DEFAULT,
+        EXIT_CONDITION_FORCED_TERMINATION,
         EXIT_CONDITION_DEFAULT = 999,
         EXIT_CONDITION_USER_AFTER_DEFAULT,
     };

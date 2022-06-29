@@ -10,7 +10,7 @@
  | to obtain it through the world-wide-web, please send a note to       |
  | license@swoole.com so we can mail you a copy immediately.            |
  +----------------------------------------------------------------------+
- | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+ | Author: Tianfeng Han  <rango@swoole.com>                             |
  +----------------------------------------------------------------------+
  */
 
@@ -29,7 +29,7 @@
 static double orwl_timebase = 0.0;
 static uint64_t orwl_timestart = 0;
 
-int swoole_clock_gettime(int which_clock, struct timespec *t) {
+int swoole_clock_realtime(struct timespec *t) {
     // be more careful in a multithreaded environement
     if (!orwl_timestart) {
         mach_timebase_info_data_t tb = {0};
@@ -243,8 +243,8 @@ int Timer::select() {
     return SW_OK;
 }
 
-#if defined(SW_USE_MONOTONIC_TIME) && defined(CLOCK_MONOTONIC)
 int Timer::now(struct timeval *time) {
+#if defined(SW_USE_MONOTONIC_TIME) && defined(CLOCK_MONOTONIC)
     struct timespec _now;
     if (clock_gettime(CLOCK_MONOTONIC, &_now) < 0) {
         swoole_sys_warning("clock_gettime(CLOCK_MONOTONIC) failed");
@@ -253,12 +253,12 @@ int Timer::now(struct timeval *time) {
     time->tv_sec = _now.tv_sec;
     time->tv_usec = _now.tv_nsec / 1000;
 #else
-if (gettimeofday(time, nullptr) < 0) {
-    swoole_sys_warning("gettimeofday() failed");
-    return SW_ERR;
-}
+    if (gettimeofday(time, nullptr) < 0) {
+        swoole_sys_warning("gettimeofday() failed");
+        return SW_ERR;
+    }
 #endif
     return SW_OK;
-}  // namespace swoole
+}
 
 };  // namespace swoole

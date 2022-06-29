@@ -10,7 +10,7 @@
   | to obtain it through the world-wide-web, please send a note to       |
   | license@php.net so we can mail you a copy immediately.               |
   +----------------------------------------------------------------------+
-  | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+  | Author: Tianfeng Han  <rango@swoole.com>                             |
   +----------------------------------------------------------------------+
 */
 
@@ -137,7 +137,7 @@ struct Connection {
 
 #ifdef SW_USE_OPENSSL
     String *ssl_client_cert;
-    uint16_t ssl_client_cert_pid;
+    pid_t ssl_client_cert_pid;
 #endif
     sw_atomic_t lock;
 };
@@ -466,6 +466,10 @@ struct ListenPort {
         protocol.package_body_offset = body_offset;
     }
 
+    void set_package_max_length(uint32_t max_length) {
+        protocol.package_max_length = max_length;
+    }
+
     ListenPort();
     ~ListenPort() = default;
     int listen();
@@ -660,8 +664,9 @@ class Server {
         DISPATCH_UIDMOD = 5,
         DISPATCH_USERFUNC = 6,
         DISPATCH_STREAM = 7,
-        DISPATCH_CO_CONN_LB,
-        DISPATCH_CO_REQ_LB,
+        DISPATCH_CO_CONN_LB = 8,
+        DISPATCH_CO_REQ_LB = 9,
+        DISPATCH_CONCURRENT_LB = 10,
     };
 
     enum FactoryDispatchResult {
@@ -972,6 +977,10 @@ class Server {
      */
     std::string upload_tmp_dir = "/tmp";
     /**
+     * Write the uploaded file in form-data to disk file
+     */
+    size_t upload_max_filesize = 0;
+    /**
      * http compression level for gzip/br
      */
 #ifdef SW_HAVE_COMPRESSION
@@ -1104,6 +1113,14 @@ class Server {
         gs->min_fd = minfd;
     }
 
+    pid_t get_master_pid() {
+        return gs->master_pid;
+    }
+
+    pid_t get_manager_pid() {
+        return gs->manager_pid;
+    }
+
     void store_listen_socket();
     void store_pipe_fd(UnixSocket *p);
 
@@ -1111,7 +1128,7 @@ class Server {
         return document_root;
     }
 
-    inline String *get_recv_buffer(swSocket *_socket) {
+    inline String *get_recv_buffer(network::Socket *_socket) {
         String *buffer = _socket->recv_buffer;
         if (buffer == nullptr) {
             buffer = swoole::make_string(SW_BUFFER_SIZE_BIG, recv_buffer_allocator);
@@ -1199,19 +1216,6 @@ class Server {
         }
 
         return nullptr;
-    }
-
-    int get_lowest_load_worker_id() {
-        uint32_t lowest_load_worker_id = 0;
-        size_t min_coroutine = workers[0].coroutine_num;
-        for (uint32_t i = 1; i < worker_num; i++) {
-            if (workers[i].coroutine_num < min_coroutine) {
-                min_coroutine = workers[i].coroutine_num;
-                lowest_load_worker_id = i;
-                continue;
-            }
-        }
-        return lowest_load_worker_id;
     }
 
     void stop_async_worker(Worker *worker);
@@ -1544,6 +1548,49 @@ class Server {
     void start_heartbeat_thread();
     void join_reactor_thread();
     TimerCallback get_timeout_callback(ListenPort *port, Reactor *reactor, Connection *conn);
+
+    int get_lowest_load_worker_id() {
+        uint32_t lowest_load_worker_id = 0;
+        size_t min_coroutine = workers[0].coroutine_num;
+        for (uint32_t i = 1; i < worker_num; i++) {
+            if (workers[i].coroutine_num < min_coroutine) {
+                min_coroutine = workers[i].coroutine_num;
+                lowest_load_worker_id = i;
+                continue;
+            }
+        }
+        return lowest_load_worker_id;
+    }
+
+    int get_lowest_concurrent_worker_id() {
+        uint32_t lowest_concurrent_worker_id = 0;
+        size_t min_concurrency = workers[0].concurrency;
+        for (uint32_t i = 1; i < worker_num; i++) {
+            if (workers[i].concurrency < min_concurrency) {
+                min_concurrency = workers[i].concurrency;
+                lowest_concurrent_worker_id = i;
+                continue;
+            }
+        }
+        return lowest_concurrent_worker_id;
+    }
+
+    int get_idle_worker_id() {
+        bool found = false;
+        uint32_t key = 0;
+        SW_LOOP_N(worker_num + 1) {
+            key = sw_atomic_fetch_add(&worker_round_id, 1) % worker_num;
+            if (workers[key].status == SW_WORKER_IDLE) {
+                found = true;
+                break;
+            }
+        }
+        if (sw_unlikely(!found)) {
+            scheduler_warning = true;
+        }
+        swoole_trace_log(SW_TRACE_SERVER, "schedule=%d, round=%d", key, worker_round_id);
+        return key;
+    }
 };
 
 }  // namespace swoole

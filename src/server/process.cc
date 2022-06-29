@@ -10,7 +10,7 @@
  | to obtain it through the world-wide-web, please send a note to       |
  | license@swoole.com so we can mail you a copy immediately.            |
  +----------------------------------------------------------------------+
- | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+ | Author: Tianfeng Han  <rango@swoole.com>                             |
  +----------------------------------------------------------------------+
  */
 
@@ -70,7 +70,6 @@ bool ProcessFactory::start() {
     }
 
     SW_LOOP_N(server_->worker_num) {
-        int kernel_buffer_size = SW_UNIXSOCK_MAX_BUF_SIZE;
         auto _sock = new UnixSocket(true, SOCK_DGRAM);
         if (!_sock->ready()) {
             delete _sock;
@@ -80,10 +79,6 @@ bool ProcessFactory::start() {
         pipes.emplace_back(_sock);
         server_->workers[i].pipe_master = _sock->get_socket(true);
         server_->workers[i].pipe_worker = _sock->get_socket(false);
-
-        server_->workers[i].pipe_master->set_send_buffer_size(kernel_buffer_size);
-        server_->workers[i].pipe_worker->set_send_buffer_size(kernel_buffer_size);
-
         server_->workers[i].pipe_object = _sock;
         server_->store_pipe_fd(server_->workers[i].pipe_object);
     }
@@ -160,7 +155,9 @@ bool ProcessFactory::dispatch(SendData *task) {
     SendData _task;
     memcpy(&_task, task, sizeof(SendData));
 
-    return server_->message_bus.write(server_->get_worker_pipe_socket(worker), &_task);
+    network::Socket *pipe_socket =
+        server_->is_reactor_thread() ? server_->get_worker_pipe_socket(worker) : worker->pipe_master;
+    return server_->message_bus.write(pipe_socket, &_task);
 }
 
 static bool inline process_is_supported_send_yield(Server *serv, Connection *conn) {
@@ -272,27 +269,24 @@ bool ProcessFactory::end(SessionId session_id, int flags) {
     DataHead ev = {};
 
     /**
-     * Only active shutdown needs to determine whether it is in the process of connection binding
+     * Only close actively needs to determine whether it is in the process of connection binding.
+     * If the worker process is not currently bound to this connection,
+     * MUST forward to the correct worker process
      */
     if (conn->close_actively) {
-        /**
-         * The worker process is not currently bound to this connection,
-         * and needs to be forwarded to the correct worker process
-         */
-        int worker_id = server_->is_hash_dispatch_mode() ? server_->schedule_worker(conn->fd, nullptr)
-                                                         : conn->fd % server_->worker_num;
         if (server_->last_stream_socket) {
             goto _close;
         }
-        if (server_->is_worker() && worker_id == (int) SwooleG.process_id) {
+        bool hash = server_->is_hash_dispatch_mode();
+        int worker_id = hash ? server_->schedule_worker(conn->fd, nullptr) : conn->fd % server_->worker_num;
+        if (server_->is_worker() && (!hash || worker_id == (int) SwooleG.process_id)) {
             goto _close;
-        } else {
-            worker = server_->get_worker(worker_id);
-            ev.type = SW_SERVER_EVENT_CLOSE;
-            ev.fd = session_id;
-            ev.reactor_id = conn->reactor_id;
-            return server_->send_to_worker_from_worker(worker, &ev, sizeof(ev), SW_PIPE_MASTER) > 0;
         }
+        worker = server_->get_worker(worker_id);
+        ev.type = SW_SERVER_EVENT_CLOSE;
+        ev.fd = session_id;
+        ev.reactor_id = conn->reactor_id;
+        return server_->send_to_worker_from_worker(worker, &ev, sizeof(ev), SW_PIPE_MASTER) > 0;
     }
 
 _close:

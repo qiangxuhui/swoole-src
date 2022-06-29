@@ -10,7 +10,7 @@
   | to obtain it through the world-wide-web, please send a note to       |
   | license@swoole.com so we can mail you a copy immediately.            |
   +----------------------------------------------------------------------+
-  | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+  | Author: Tianfeng Han  <rango@swoole.com>                             |
   +----------------------------------------------------------------------+
 */
 
@@ -18,6 +18,10 @@
 
 #include <string>
 #include <map>
+
+BEGIN_EXTERN_C()
+#include "stubs/php_swoole_http_server_coro_arginfo.h"
+END_EXTERN_C()
 
 using swoole::microtime;
 using swoole::PHPCoroutine;
@@ -138,7 +142,8 @@ class http_server {
         parser->data = ctx;
         swoole_http_parser_init(parser, PHP_HTTP_REQUEST);
 
-        zend_update_property(swoole_http_response_ce, SW_Z8_OBJ_P(ctx->response.zobject), ZEND_STRL("socket"), zconn);
+        zend_update_property_ex(
+            swoole_http_response_ce, SW_Z8_OBJ_P(ctx->response.zobject), SW_ZSTR_KNOWN(SW_ZEND_STR_SOCKET), zconn);
 
         return ctx;
     }
@@ -195,36 +200,15 @@ static PHP_METHOD(swoole_http_server_coro, __destruct);
 SW_EXTERN_C_END
 
 // clang-format off
-
-ZEND_BEGIN_ARG_INFO_EX(arginfo_swoole_void, 0, 0, 0)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO_EX(arginfo_swoole_http_server_coro_construct, 0, 0, 1)
-    ZEND_ARG_INFO(0, host)
-    ZEND_ARG_INFO(0, port)
-    ZEND_ARG_INFO(0, ssl)
-    ZEND_ARG_INFO(0, reuse_port)
-ZEND_END_ARG_INFO()
-
-
-ZEND_BEGIN_ARG_INFO_EX(arginfo_swoole_http_server_coro_handle, 0, 0, 2)
-    ZEND_ARG_INFO(0, pattern)
-    ZEND_ARG_CALLABLE_INFO(0, callback, 0)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO_EX(arginfo_swoole_http_server_coro_set, 0, 0, 1)
-    ZEND_ARG_ARRAY_INFO(0, settings, 0)
-ZEND_END_ARG_INFO()
-
 static const zend_function_entry swoole_http_server_coro_methods[] =
 {
-    PHP_ME(swoole_http_server_coro, __construct, arginfo_swoole_http_server_coro_construct, ZEND_ACC_PUBLIC)
-    PHP_ME(swoole_http_server_coro, __destruct, arginfo_swoole_void, ZEND_ACC_PUBLIC)
-    PHP_ME(swoole_http_server_coro, set, arginfo_swoole_http_server_coro_set, ZEND_ACC_PUBLIC)
-    PHP_ME(swoole_http_server_coro, handle, arginfo_swoole_http_server_coro_handle, ZEND_ACC_PUBLIC)
-    PHP_ME(swoole_http_server_coro, onAccept, arginfo_swoole_void, ZEND_ACC_PRIVATE)
-    PHP_ME(swoole_http_server_coro, start, arginfo_swoole_void, ZEND_ACC_PUBLIC)
-    PHP_ME(swoole_http_server_coro, shutdown, arginfo_swoole_void, ZEND_ACC_PUBLIC)
+    PHP_ME(swoole_http_server_coro, __construct, arginfo_class_Swoole_Coroutine_Http_Server___construct, ZEND_ACC_PUBLIC)
+    PHP_ME(swoole_http_server_coro, __destruct,  arginfo_class_Swoole_Coroutine_Http_Server___destruct,  ZEND_ACC_PUBLIC)
+    PHP_ME(swoole_http_server_coro, set,         arginfo_class_Swoole_Coroutine_Http_Server_set,         ZEND_ACC_PUBLIC)
+    PHP_ME(swoole_http_server_coro, handle,      arginfo_class_Swoole_Coroutine_Http_Server_handle,      ZEND_ACC_PUBLIC)
+    PHP_ME(swoole_http_server_coro, onAccept,    arginfo_class_Swoole_Coroutine_Http_Server_onAccept,    ZEND_ACC_PRIVATE)
+    PHP_ME(swoole_http_server_coro, start,       arginfo_class_Swoole_Coroutine_Http_Server_start,       ZEND_ACC_PUBLIC)
+    PHP_ME(swoole_http_server_coro, shutdown,    arginfo_class_Swoole_Coroutine_Http_Server_shutdown,    ZEND_ACC_PUBLIC)
     PHP_FE_END
 };
 // clang-format on
@@ -301,7 +285,6 @@ void HttpContext::bind(Socket *sock) {
 void php_swoole_http_server_coro_minit(int module_number) {
     SW_INIT_CLASS_ENTRY(swoole_http_server_coro,
                         "Swoole\\Coroutine\\Http\\Server",
-                        nullptr,
                         "Co\\Http\\Server",
                         swoole_http_server_coro_methods);
     SW_SET_CLASS_NOT_SERIALIZABLE(swoole_http_server_coro);
@@ -553,6 +536,7 @@ static PHP_METHOD(swoole_http_server_coro, onAccept) {
     HttpContext *ctx = nullptr;
     bool header_completed = false;
     off_t header_crlf_offset = 0;
+    size_t total_length;
 
     hs->clients.push_front(sock);
     auto client_iterator = hs->clients.begin();
@@ -578,46 +562,65 @@ static PHP_METHOD(swoole_http_server_coro, onAccept) {
         }
 
         if (!header_completed) {
-            if (swoole_strnpos(
-                    buffer->str + header_crlf_offset, buffer->length - header_crlf_offset, ZEND_STRL("\r\n\r\n")) < 0) {
+            ssize_t pos = swoole_strnpos(
+                buffer->str + header_crlf_offset, buffer->length - header_crlf_offset, ZEND_STRL("\r\n\r\n"));
+            if (pos < 0) {
                 if (buffer->length == buffer->size) {
                     ctx->response.status = SW_HTTP_REQUEST_ENTITY_TOO_LARGE;
                     break;
                 }
                 header_crlf_offset = buffer->length > 4 ? buffer->length - 4 : 0;
                 continue;
-            } else {
-                header_completed = true;
-                header_crlf_offset = 0;
+            }
+
+            size_t header_length = header_crlf_offset + pos;
+            header_completed = true;
+            header_crlf_offset = 0;
+
+            // The HTTP header must be parsed first
+            // Header contains CRLFx2
+            header_length += 4;
+            size_t parsed_n = ctx->parse(buffer->str, header_length);
+            if (parsed_n != header_length) {
+                ctx->response.status = SW_HTTP_BAD_REQUEST;
+                break;
+            }
+            buffer->offset += header_length;
+            total_length = header_length + ctx->get_content_length();
+            if (ctx->get_content_length() > 0 && total_length > sock->protocol.package_max_length) {
+                ctx->response.status = SW_HTTP_REQUEST_ENTITY_TOO_LARGE;
+                break;
+            }
+            if (total_length > buffer->size && !buffer->extend(total_length)) {
+                ctx->response.status = SW_HTTP_SERVICE_UNAVAILABLE;
+                break;
             }
         }
 
-        size_t parsed_n = ctx->parse(buffer->str + buffer->offset, buffer->length - buffer->offset);
-        buffer->offset += parsed_n;
-
-        swoole_trace_log(SW_TRACE_CO_HTTP_SERVER,
-                         "parsed_n=%ld, length=%ld, offset=%ld, completed=%d",
-                         parsed_n,
-                         buffer->length,
-                         buffer->offset,
-                         ctx->completed);
-
         if (!ctx->completed) {
+            // Make sure the complete request package is received
+            if (ctx->recv_chunked &&
+                memcmp(buffer->str + buffer->length - (sizeof(SW_HTTP_CHUNK_EOF) - 1), SW_STRL(SW_HTTP_CHUNK_EOF)) != 0) {
+                goto _recv_request;
+            }
+            if (buffer->length < total_length) {
+                goto _recv_request;
+            }
+
+            size_t parsed_n = ctx->parse(buffer->str + buffer->offset, buffer->length - buffer->offset);
+            buffer->offset += parsed_n;
+
+            swoole_trace_log(SW_TRACE_CO_HTTP_SERVER,
+                             "parsed_n=%zu, length=%zu, offset=%jd, completed=%u",
+                             parsed_n,
+                             buffer->length,
+                             (intmax_t) buffer->offset,
+                             ctx->completed);
+
             if (ctx->parser.state == s_dead) {
                 ctx->response.status = SW_HTTP_BAD_REQUEST;
                 break;
             }
-            if (ctx->parser.content_length > 0 && ctx->parser.content_length > sock->protocol.package_max_length) {
-                ctx->response.status = SW_HTTP_REQUEST_ENTITY_TOO_LARGE;
-                break;
-            }
-            if (buffer->length == buffer->size) {
-                if (!buffer->extend()) {
-                    ctx->response.status = SW_HTTP_SERVICE_UNAVAILABLE;
-                    break;
-                }
-            }
-            continue;
         }
 
 #ifdef SW_USE_HTTP2
@@ -631,7 +634,6 @@ static PHP_METHOD(swoole_http_server_coro, onAccept) {
         }
 #endif
 
-        size_t total_length = buffer->offset;
         zend::assign_zend_string_by_val(&ctx->request.zdata, buffer->pop(SW_BUFFER_SIZE_BIG), total_length);
 
         zval *zserver = ctx->request.zserver;
@@ -655,7 +657,7 @@ static PHP_METHOD(swoole_http_server_coro, onAccept) {
         zval_dtor(&args[1]);
         ctx = nullptr;
 
-        if (!hs->running || !keep_alive) {
+        if (!hs->running || !keep_alive || php_swoole_socket_is_closed(zconn)) {
             break;
         } else {
             header_completed = false;

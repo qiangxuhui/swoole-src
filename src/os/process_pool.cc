@@ -10,7 +10,7 @@
   | to obtain it through the world-wide-web, please send a note to       |
   | license@swoole.com so we can mail you a copy immediately.            |
   +----------------------------------------------------------------------+
-  | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+  | Author: Tianfeng Han  <rango@swoole.com>                             |
   +----------------------------------------------------------------------+
 */
 
@@ -368,7 +368,7 @@ void ProcessPool::shutdown() {
     for (i = 0; i < worker_num; i++) {
         worker = &workers[i];
         if (swoole_kill(worker->pid, SIGTERM) < 0) {
-            swoole_sys_warning("swKill(%d) failed", worker->pid);
+            swoole_sys_warning("kill(%d, SIGTERM) failed", worker->pid);
             continue;
         }
     }

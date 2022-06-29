@@ -8,8 +8,9 @@ error_reporting(0);
 require __DIR__ . '/../include/bootstrap.php';
 
 use Swoole\Server;
+use Swoole\Timer;
 
-$atomic = new swoole_atomic(1);
+$atomic = new Swoole\Atomic(1);
 
 $pm = new SwooleTest\ProcessManager;
 $pm->parentFunc = function ($pid) use ($pm,$argv) {
@@ -32,11 +33,11 @@ $pm->childFunc = function () use ($pm,$atomic) {
     ]);
     $serv->on("WorkerStart", function (Server $server, $worker_id) use ($pm, $atomic) {
         $pm->wakeup();
-        $server->after(50,function() use ($server, $worker_id, $atomic){
+        Timer::after(50,function() use ($server, $worker_id, $atomic){
             if ($atomic->get() == 1) {
                 $atomic->add(1);
                 $server->reload();
-            }            
+            }
         });
     });
     $serv->on('receive', function ($serv, $fd, $tid, $data) {

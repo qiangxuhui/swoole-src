@@ -10,7 +10,7 @@
   | to obtain it through the world-wide-web, please send a note to       |
   | license@swoole.com so we can mail you a copy immediately.            |
   +----------------------------------------------------------------------+
-  | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+  | Author: Tianfeng Han  <rango@swoole.com>                             |
   +----------------------------------------------------------------------+
 */
 
@@ -76,6 +76,7 @@ enum swErrorCode {
     SW_ERROR_PACKAGE_LENGTH_TOO_LARGE = 1201,
     SW_ERROR_PACKAGE_LENGTH_NOT_FOUND,
     SW_ERROR_DATA_LENGTH_TOO_LARGE,
+    SW_ERROR_PACKAGE_MALFORMED_DATA,
 
     /**
      * task error
@@ -91,6 +92,7 @@ enum swErrorCode {
     SW_ERROR_HTTP2_STREAM_NO_HEADER,
     SW_ERROR_HTTP2_STREAM_NOT_FOUND,
     SW_ERROR_HTTP2_STREAM_IGNORE,
+    SW_ERROR_HTTP2_SEND_CONTROL_FRAME_FAILED,
 
     /**
      * AIO
@@ -129,6 +131,8 @@ enum swErrorCode {
     SW_ERROR_WEBSOCKET_UNCONNECTED,
     SW_ERROR_WEBSOCKET_HANDSHAKE_FAILED,
     SW_ERROR_WEBSOCKET_PACK_FAILED,
+    SW_ERROR_WEBSOCKET_UNPACK_FAILED,
+    SW_ERROR_WEBSOCKET_INCOMPLETE_PACKET,
 
     /**
      * server global error
@@ -145,6 +149,8 @@ enum swErrorCode {
     SW_ERROR_SERVER_INVALID_REQUEST,
     SW_ERROR_SERVER_CONNECT_FAIL,
     SW_ERROR_SERVER_INVALID_COMMAND,
+    SW_ERROR_SERVER_IS_NOT_REGULAR_FILE,
+    SW_ERROR_SERVER_SEND_TO_WOKER_TIMEOUT,
 
     /**
      * Process exit timeout, forced to end.

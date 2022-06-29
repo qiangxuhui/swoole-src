@@ -12,7 +12,7 @@ dnl  | If you did not receive a copy of the Apache2.0 license and are unable|
 dnl  | to obtain it through the world-wide-web, please send a note to       |
 dnl  | license@swoole.com so we can mail you a copy immediately.            |
 dnl  +----------------------------------------------------------------------+
-dnl  | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+dnl  | Author: Tianfeng Han  <rango@swoole.com>                             |
 dnl  | Author: Twosee  <twose@qq.com>                                       |
 dnl  +----------------------------------------------------------------------+
 
@@ -100,6 +100,11 @@ PHP_ARG_ENABLE([thread-context],
   [whether to enable thread context],
   [AS_HELP_STRING([--enable-thread-context],
     [Use thread context])], [no], [no])
+
+PHP_ARG_ENABLE([swoole-coro-time],
+  [whether to enable coroutine execution time ],
+  [AS_HELP_STRING([--enable-swoole-coro-time],
+    [Calculating coroutine execution time])], [no], [no])
 
 AC_DEFUN([SWOOLE_HAVE_PHP_EXT], [
     extname=$1
@@ -207,7 +212,7 @@ AC_DEFUN([AC_SWOOLE_HAVE_UCONTEXT],
 AC_DEFUN([AC_SWOOLE_HAVE_VALGRIND],
 [
     AC_MSG_CHECKING([for valgrind])
-    AC_LANG([C++])
+    AC_LANG_PUSH([C++])
     AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
         #include <valgrind/valgrind.h>
     ]], [[
@@ -218,12 +223,13 @@ AC_DEFUN([AC_SWOOLE_HAVE_VALGRIND],
     ],[
         AC_MSG_RESULT([no])
     ])
+    AC_LANG_POP([C++])
 ])
 
 AC_DEFUN([AC_SWOOLE_HAVE_BOOST_STACKTRACE],
 [
     AC_MSG_CHECKING([for valgrind])
-    AC_LANG([C++])
+    AC_LANG_PUSH([C++])
     AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
         #include <boost/stacktrace.hpp>
     ]], [[
@@ -234,6 +240,7 @@ AC_DEFUN([AC_SWOOLE_HAVE_BOOST_STACKTRACE],
     ],[
         AC_MSG_RESULT([no])
     ])
+    AC_LANG_POP([C++])
 ])
 
 AC_DEFUN([AC_SWOOLE_CHECK_SOCKETS], [
@@ -354,6 +361,7 @@ if test "$PHP_SWOOLE" != "no"; then
     AC_CHECK_LIB(c, ptrace, AC_DEFINE(HAVE_PTRACE, 1, [have ptrace]))
     AC_CHECK_LIB(c, getrandom, AC_DEFINE(HAVE_GETRANDOM, 1, [have getrandom]))
     AC_CHECK_LIB(c, arc4random, AC_DEFINE(HAVE_ARC4RANDOM, 1, [have arc4random]))
+    AC_CHECK_LIB(c, CCRandomGenerateBytes, AC_DEFINE(HAVE_CCRANDOMGENERATEBYTES, 1, [have_ccrandomgeneratebytes]))
     AC_CHECK_LIB(pthread, pthread_rwlock_init, AC_DEFINE(HAVE_RWLOCK, 1, [have pthread_rwlock_init]))
     AC_CHECK_LIB(pthread, pthread_spin_lock, AC_DEFINE(HAVE_SPINLOCK, 1, [have pthread_spin_lock]))
     AC_CHECK_LIB(pthread, pthread_mutex_timedlock, AC_DEFINE(HAVE_MUTEX_TIMEDLOCK, 1, [have pthread_mutex_timedlock]))
@@ -405,6 +413,10 @@ if test "$PHP_SWOOLE" != "no"; then
 
     if test "$PHP_SWOOLE_CURL" = "yes"; then
         AC_DEFINE(SW_USE_CURL, 1, [do we enable cURL native client])
+    fi
+
+    if test "$PHP_SWOOLE_CORO_TIME" = "yes"; then
+        AC_DEFINE(SW_CORO_TIME, 1, [do we enable to calculate coroutine execution time])
     fi
 
     if test "$PHP_SWOOLE_PGSQL" != "no"; then
@@ -562,25 +574,19 @@ EOF
     CFLAGS="-Wall -pthread $CFLAGS"
     LDFLAGS="$LDFLAGS -lpthread"
 
-    if test "$SW_OS" = "MAC"; then
-        AC_CHECK_LIB(c, clock_gettime, AC_DEFINE(HAVE_CLOCK_GETTIME, 1, [have clock_gettime]))
-    else
-        AC_CHECK_LIB(rt, clock_gettime, AC_DEFINE(HAVE_CLOCK_GETTIME, 1, [have clock_gettime]))
+    if test "$SW_OS" != "MAC"; then
         PHP_ADD_LIBRARY(rt, 1, SWOOLE_SHARED_LIBADD)
     fi
+
     if test "$SW_OS" = "LINUX"; then
         LDFLAGS="$LDFLAGS -z now"
     fi
 
     if test "$PHP_OPENSSL" != "no" || test "$PHP_OPENSSL_DIR" != "no"; then
         if test "$PHP_OPENSSL_DIR" != "no"; then
-            AC_DEFINE(HAVE_OPENSSL, 1, [have openssl])
             PHP_ADD_INCLUDE("${PHP_OPENSSL_DIR}/include")
             PHP_ADD_LIBRARY_WITH_PATH(ssl, "${PHP_OPENSSL_DIR}/${PHP_LIBDIR}")
-        else
-            AC_CHECK_LIB(ssl, SSL_connect, AC_DEFINE(HAVE_OPENSSL, 1, [have openssl]))
         fi
-
         AC_DEFINE(SW_USE_OPENSSL, 1, [enable openssl support])
         PHP_ADD_LIBRARY(ssl, 1, SWOOLE_SHARED_LIBADD)
         PHP_ADD_LIBRARY(crypto, 1, SWOOLE_SHARED_LIBADD)
@@ -710,6 +716,7 @@ EOF
         src/server/task_worker.cc \
         src/server/worker.cc \
         src/wrapper/event.cc \
+        src/wrapper/http.cc \
         src/wrapper/timer.cc"
 
     swoole_source_file="$swoole_source_file \
@@ -750,9 +757,9 @@ EOF
       [amd64*], [SW_CPU="x86_64"],
       [x86*], [SW_CPU="x86"],
       [i?86*], [SW_CPU="x86"],
-      [arm*], [SW_CPU="arm"],
-      [aarch64*], [SW_CPU="arm64"],
       [arm64*], [SW_CPU="arm64"],
+      [aarch64*], [SW_CPU="arm64"],
+      [arm*], [SW_CPU="arm32"],
       [mips64*], [SW_CPU="mips64"],
       [mips*], [SW_CPU="mips32"],
       [riscv64*], [SW_CPU="riscv64"],
@@ -775,7 +782,7 @@ EOF
         else
             SW_USE_ASM_CONTEXT="no"
         fi
-    elif test "$SW_CPU" = "arm"; then
+    elif test "$SW_CPU" = "arm32"; then
         if test "$SW_OS" = "LINUX" || test "$SW_OS" = "BSD"; then
             SW_CONTEXT_ASM_FILE="arm_aapcs_elf_gas.S"
         else
@@ -837,6 +844,7 @@ EOF
 
     PHP_ADD_INCLUDE([$ext_srcdir])
     PHP_ADD_INCLUDE([$ext_srcdir/include])
+    PHP_ADD_INCLUDE([$ext_srcdir/stubs])
     PHP_ADD_INCLUDE([$ext_srcdir/ext-src])
     PHP_ADD_INCLUDE([$ext_srcdir/thirdparty])
     PHP_ADD_INCLUDE([$ext_srcdir/thirdparty/hiredis])
@@ -852,6 +860,7 @@ EOF
 
     PHP_INSTALL_HEADERS([ext/swoole], [ext-src/*.h config.h php_swoole.h \
         include/*.h \
+        stubs/*.h \
         thirdparty/*.h \
         thirdparty/nghttp2/*.h \
         thirdparty/hiredis/*.h])
@@ -864,6 +873,10 @@ EOF
         CXXFLAGS="$CXXFLAGS -std=gnu++11"
     else
         CXXFLAGS="$CXXFLAGS -std=c++11"
+    fi
+
+    if test "$SW_CPU" = "arm"; then
+        PHP_ADD_LIBRARY(atomic, 1, SWOOLE_SHARED_LIBADD)
     fi
 
     PHP_ADD_BUILD_DIR($ext_builddir/ext-src)

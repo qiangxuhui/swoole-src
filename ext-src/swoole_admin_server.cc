@@ -10,14 +10,17 @@
   | to obtain it through the world-wide-web, please send a note to       |
   | license@swoole.com so we can mail you a copy immediately.            |
   +----------------------------------------------------------------------+
-  | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+  | Author: Tianfeng Han  <rango@swoole.com>                             |
   +----------------------------------------------------------------------+
  */
 
 #include "php_swoole_server.h"
 #include "swoole_process_pool.h"
 #include "php_swoole_http.h"
-#include "php_swoole_x_arginfo.h"
+
+BEGIN_EXTERN_C()
+#include "stubs/php_swoole_ex_arginfo.h"
+END_EXTERN_C()
 
 #include <sstream>
 #include <thread>
@@ -321,7 +324,6 @@ static std::string handle_get_memory_info(Server *serv, const std::string &msg) 
         {"socket_out_buffer", get_socket_out_buffer_total_size()},
         {"php_memory", is_thread ? 0 : zend_memory_usage(true)},
         {"http_buffer", swoole_http_buffer ? swoole_http_buffer->size : 0},
-        {"http_form_data_buffer", swoole_http_form_data_buffer ? swoole_http_form_data_buffer->size : 0},
 #ifdef SW_HAVE_COMPRESSION
         {"zlib_buffer", swoole_zlib_buffer ? swoole_zlib_buffer->size : 0},
 #else

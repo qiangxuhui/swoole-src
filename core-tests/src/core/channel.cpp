@@ -13,7 +13,7 @@
   | @link     https://www.swoole.com/                                    |
   | @contact  team@swoole.com                                            |
   | @license  https://github.com/swoole/swoole-src/blob/master/LICENSE   |
-  | @author   Tianfeng Han  <mikan.tenny@gmail.com>                      |
+  | @Author   Tianfeng Han  <rango@swoole.com>                           |
   +----------------------------------------------------------------------+
 */
 
@@ -84,5 +84,40 @@ TEST(channel, push) {
     t1.join();
     t2.join();
 
+    c->destroy();
+}
+
+TEST(channel, peek) {
+    char buf[8000];
+    auto *c = Channel::make(128 * 1024, 8192, SW_CHAN_LOCK | SW_CHAN_NOTIFY);
+    ASSERT_EQ(c->peek(buf, sizeof(buf)), SW_ERR);
+
+    string value = "test";
+    c->push(value.c_str(), value.length());
+    ASSERT_EQ(c->peek((void *) buf, sizeof(buf)), value.length());
+    c->destroy();
+}
+
+TEST(channel, notify) {
+    auto *c = Channel::make(128 * 1024, 8192, SW_CHAN_LOCK | SW_CHAN_NOTIFY);
+    thread t1([&]() {
+        sleep(0.02);
+        string value = "test";
+        c->push(value.c_str(), value.length());
+        c->notify();
+    });
+
+    thread t2([&]() {
+        while (c->wait()) {
+            char buf[8000];
+            ASSERT_GT(c->pop((void *) buf, sizeof(buf)), 0);
+            break;
+        }
+    });
+
+    t1.join();
+    t2.join();
+
+    c->print();
     c->destroy();
 }

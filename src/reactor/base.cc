@@ -10,7 +10,7 @@
   | to obtain it through the world-wide-web, please send a note to       |
   | license@swoole.com so we can mail you a copy immediately.            |
   +----------------------------------------------------------------------+
-  | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+  | Author: Tianfeng Han  <rango@swoole.com>                             |
   +----------------------------------------------------------------------+
 */
 
@@ -246,7 +246,7 @@ static ssize_t write_func(
             } else {
                 goto _alloc_buffer;
             }
-        } else if (socket->catch_error(errno) == SW_WAIT) {
+        } else if (socket->catch_write_error(errno) == SW_WAIT) {
         _alloc_buffer:
             if (!socket->out_buffer) {
                 buffer = new Buffer(socket->chunk_size);
@@ -383,6 +383,10 @@ void Reactor::set_end_callback(enum EndCallback id, const std::function<void(Rea
     end_callbacks[id] = fn;
 }
 
+/**
+ * Returns false, the reactor cannot be exited, the next condition is skipped
+ * Returns true, the reactor can exit and will continue to execute the next conditional function
+ */
 void Reactor::set_exit_condition(enum ExitCondition id, const std::function<bool(Reactor *, size_t &)> &fn) {
     exit_conditions[id] = fn;
 }

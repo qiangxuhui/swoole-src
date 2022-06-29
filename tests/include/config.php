@@ -15,13 +15,13 @@ define('IS_IN_TRAVIS', !!getenv('TRAVIS') || file_exists('/.travisenv'));
 define('IS_PHPTESTSING', !!getenv('PHPT'));
 define('USE_VALGRIND', getenv('USE_ZEND_ALLOC') === '0');
 define('HAS_SSL', defined("SWOOLE_SSL"));
-define('HAS_ASYNC_REDIS', class_exists("swoole_redis", false));
-define('HAS_HTTP2', class_exists("swoole_http2_request", false));
+define('HAS_ASYNC_REDIS', class_exists("Swoole\\Redis", false));
+define('HAS_HTTP2', class_exists("Swoole\\Http2\\Request", false));
 define('DEV_NULL', '/dev/null');
 
 /** ============== Files ============== */
-define('SOURCE_ROOT_PATH', __DIR__ . '/../../');
-define('TESTS_ROOT_PATH', __DIR__ . '/../');
+define('SOURCE_ROOT_PATH', realpath(__DIR__ . '/../../'));
+define('TESTS_ROOT_PATH', realpath(__DIR__ . '/../'));
 define('TESTS_API_PATH', TESTS_ROOT_PATH.'/include/api');
 define('TESTS_LIB_PATH', TESTS_ROOT_PATH.'/include/lib');
 define('TRAVIS_DIR_PATH', __DIR__ . '/../../travis/');
@@ -58,6 +58,9 @@ define('MYSQL_SERVER_PORT', (int)(getenv('MYSQL_SERVER_PORT') ?: 3306));
 define('MYSQL_SERVER_USER', getenv('MYSQL_SERVER_USER') ?: 'root');
 define('MYSQL_SERVER_PWD', getenv('MYSQL_SERVER_PWD') ?: 'root');
 define('MYSQL_SERVER_DB', getenv('MYSQL_SERVER_DB') ?: 'test');
+
+/** ============== PostgreSQL ============== */
+define('PGSQL_CONNECTION_STRING', getenv('PGSQL_CONNECTION_STRING') ?: ('host=' . (IS_IN_TRAVIS ? 'pgsql' : '127.0.0.1') . ' port=5432 dbname=test user=root password=root'));
 
 /** ============== Redis ============== */
 define('REDIS_SERVER_PATH', getenv('REDIS_SERVER_PATH') ?:

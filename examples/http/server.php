@@ -1,14 +1,15 @@
 <?php
 function dump($var)
 {
-    return highlight_string("<?php\n\$array = ".var_export($var, true).";", true);
+    return highlight_string("<?php\n\$array = " . var_export($var, true) . ";", true);
 }
+
 $key_dir = dirname(dirname(__DIR__)) . '/tests/ssl';
-//$http = new swoole_http_server("0.0.0.0", 9501, SWOOLE_BASE);
-$http = new swoole_http_server("0.0.0.0", 9501);
-//$http = new swoole_http_server("0.0.0.0", 9501, SWOOLE_BASE, SWOOLE_SOCK_TCP | SWOOLE_SSL);
+$http = new Swoole\Http\Server("0.0.0.0", 9501, SWOOLE_BASE);
+//$http = new Swoole\Http\Server("0.0.0.0", 9501);
+//$http = new Swoole\Http\Server("0.0.0.0", 9501, SWOOLE_BASE, SWOOLE_SOCK_TCP | SWOOLE_SSL);
 //https
-//$http = new swoole_http_server("0.0.0.0", 9501, SWOOLE_BASE, SWOOLE_SOCK_TCP | SWOOLE_SSL);
+//$http = new Swoole\Http\Server("0.0.0.0", 9501, SWOOLE_BASE, SWOOLE_SOCK_TCP | SWOOLE_SSL);
 //$http->setGlobal(HTTP_GLOBAL_ALL, HTTP_GLOBAL_GET|HTTP_GLOBAL_POST|HTTP_GLOBAL_COOKIE);
 $http->set([
 //    'daemonize' => 1,
@@ -19,6 +20,8 @@ $http->set([
     //'enable_port_reuse' => true,
     // 'http_compression' => false,
     'worker_num' => 1,
+    'upload_max_filesize' => 1 * 1024 * 1024 * 1024,
+    'package_max_length' => 1 * 1024 * 1024,
     //'log_file' => __DIR__.'/swoole.log',
 //    'reactor_num' => 24,
     //'dispatch_mode' => 3,
@@ -37,7 +40,7 @@ $http->set([
 
 $http->listen('127.0.0.1', 9502, SWOOLE_SOCK_TCP);
 
-function chunk(swoole_http_request $request, swoole_http_response $response)
+function chunk(Swoole\Http\Request $request, Swoole\Http\Response $response)
 {
     $response->write("<h1>hello world1</h1>");
     //sleep(1);
@@ -46,7 +49,7 @@ function chunk(swoole_http_request $request, swoole_http_response $response)
     $response->end();
 }
 
-function no_chunk(swoole_http_request $request, swoole_http_response $response)
+function no_chunk(Swoole\Http\Request $request, Swoole\Http\Response $response)
 {
     /**
      * Cookie Test
@@ -117,7 +120,11 @@ function no_chunk(swoole_http_request $request, swoole_http_response $response)
         $output .= "<h2>HEADER:</h2>" . dump($request->header);
         $output .= "<h2>SERVER:</h2>" . dump($request->server);
         if (!empty($request->files)) {
-            $output .= "<h2>FILE:</h2>" . dump($request->files);
+            $files = $request->files;
+            foreach ($files as &$f) {
+                $f['md5'] = md5_file($f['tmp_name']);
+            }
+            $output .= "<h2>FILE:</h2>" . dump($files);
         }
         if (!empty($request->cookie)) {
             $output .= "<h2>COOKIES:</h2>" . dump($request->cookie);
@@ -131,7 +138,7 @@ function no_chunk(swoole_http_request $request, swoole_http_response $response)
         var_dump($request->post);
         //$response->header('X-Server', 'Swoole');
         //unset($request, $response);
-//    swoole_timer_after(2000, function() use ( $response) {
+//    Swoole\Timer::after(2000, function() use ( $response) {
         $response->end("<h1>Hello Swoole.</h1>" . $output);
         return;
 //    });
@@ -154,15 +161,11 @@ function no_chunk(swoole_http_request $request, swoole_http_response $response)
     //global $http;
     //$http->task("hello world");
     $file = realpath(__DIR__ . '/../' . $request->server['request_uri']);
-    if (is_file($file))
-    {
+    if (is_file($file)) {
         echo "http get file=$file\n";
-        if (substr($file, -4) == '.php')
-        {
+        if (substr($file, -4) == '.php') {
             $response->gzip();
-        }
-        else
-        {
+        } else {
             $response->header('Content-Type', 'image/jpeg');
         }
         $content = file_get_contents($file);
@@ -172,9 +175,7 @@ function no_chunk(swoole_http_request $request, swoole_http_response $response)
 //        $response->end();
 
         $response->end($content);
-    }
-    else
-    {
+    } else {
         $response->end("<h1>Hello Swoole.</h1>");
     }
 }
@@ -182,23 +183,20 @@ function no_chunk(swoole_http_request $request, swoole_http_response $response)
 $http->on('request', function ($req, $resp) {
     $uri = $req->server['request_uri'];
     if ($uri == '/favicon.ico') {
-    	$resp->status(404);
+        $resp->status(404);
         $resp->end();
-    }
-	elseif ($uri == '/chunk') {
-    	chunk($req, $resp);
+    } elseif ($uri == '/chunk') {
+        chunk($req, $resp);
     } else {
-    	no_chunk($req, $resp);
+        no_chunk($req, $resp);
     }
 });
 
-$http->on('finish', function ()
-{
+$http->on('finish', function () {
     echo "task finish";
 });
 
-$http->on('task', function ()
-{
+$http->on('task', function () {
     echo "async task\n";
 });
 
@@ -207,8 +205,7 @@ $http->on('task', function ()
 //});
 
 
-$http->on('workerStart', function ($serv, $id)
-{
+$http->on('workerStart', function ($serv, $id) {
     //var_dump($serv);
 });
 

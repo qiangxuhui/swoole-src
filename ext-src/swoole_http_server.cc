@@ -10,11 +10,12 @@
   | to obtain it through the world-wide-web, please send a note to       |
   | license@swoole.com so we can mail you a copy immediately.            |
   +----------------------------------------------------------------------+
-  | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+  | Author: Tianfeng Han  <rango@swoole.com>                             |
   +----------------------------------------------------------------------+
 */
 
 #include "php_swoole_http_server.h"
+#include "swoole_process_pool.h"
 
 using namespace swoole;
 using swoole::coroutine::Socket;
@@ -30,7 +31,6 @@ String *swoole_http_buffer;
 /* not only be used by zlib but also be used by br */
 String *swoole_zlib_buffer;
 #endif
-String *swoole_http_form_data_buffer;
 
 zend_class_entry *swoole_http_server_ce;
 zend_object_handlers swoole_http_server_handlers;
@@ -160,8 +160,7 @@ _dtor_and_return:
 }
 
 void php_swoole_http_server_minit(int module_number) {
-    SW_INIT_CLASS_ENTRY_EX(
-        swoole_http_server, "Swoole\\Http\\Server", "swoole_http_server", nullptr, nullptr, swoole_server);
+    SW_INIT_CLASS_ENTRY_EX(swoole_http_server, "Swoole\\Http\\Server", nullptr, nullptr, swoole_server);
     SW_SET_CLASS_NOT_SERIALIZABLE(swoole_http_server);
     SW_SET_CLASS_CLONEABLE(swoole_http_server, sw_zend_class_clone_deny);
     SW_SET_CLASS_UNSET_PROPERTY_HANDLER(swoole_http_server, sw_zend_class_unset_property_deny);
@@ -232,6 +231,30 @@ void HttpContext::copy(HttpContext *ctx) {
     onAfterResponse = ctx->onAfterResponse;
 }
 
+bool HttpContext::is_available() {
+    if (!response.zobject) {
+        return false;
+    }
+    if (co_socket) {
+        zval rv;
+        zval *zconn = zend_read_property_ex(
+            swoole_http_response_ce, SW_Z8_OBJ_P(response.zobject), SW_ZSTR_KNOWN(SW_ZEND_STR_SOCKET), 1, &rv);
+        if (!zconn || ZVAL_IS_NULL(zconn)) {
+            return false;
+        }
+        if (php_swoole_socket_is_closed(zconn)) {
+            return false;
+        }
+    } else {
+        Server *serv = (Server *) private_data;
+        Connection *conn = serv->get_connection_by_session_id(fd);
+        if (!conn || conn->closed || conn->peer_closed) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void HttpContext::free() {
     /* http context can only be free'd after request and response were free'd */
     if (request.zobject || response.zobject) {
@@ -262,12 +285,19 @@ void HttpContext::free() {
     if (res->reason) {
         efree(res->reason);
     }
+    if (mt_parser) {
+        multipart_parser_free(mt_parser);
+        mt_parser = nullptr;
+    }
+    if (form_data_buffer) {
+        delete form_data_buffer;
+        form_data_buffer = nullptr;
+    }
     delete this;
 }
 
 void php_swoole_http_server_init_global_variant() {
     swoole_http_buffer = new String(SW_HTTP_RESPONSE_INIT_SIZE);
-    swoole_http_form_data_buffer = new String(SW_HTTP_RESPONSE_INIT_SIZE);
     // for is_uploaded_file and move_uploaded_file
     if (!SG(rfc1867_uploaded_files)) {
         ALLOC_HASHTABLE(SG(rfc1867_uploaded_files));

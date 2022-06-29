@@ -10,7 +10,7 @@
   | to obtain it through the world-wide-web, please send a note to       |
   | license@swoole.com so we can mail you a copy immediately.            |
   +----------------------------------------------------------------------+
-  | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+  | Author: Tianfeng Han  <rango@swoole.com>                             |
   +----------------------------------------------------------------------+
 */
 
@@ -96,8 +96,10 @@ void Server::close_port(bool only_stream_port) {
 void Server::call_command_callback(int64_t request_id, const std::string &result) {
     auto iter = command_callbacks.find(request_id);
     if (iter == command_callbacks.end()) {
-        swoole_error_log(
-            SW_LOG_ERROR, SW_ERROR_SERVER_INVALID_COMMAND, "Invalid command result[request_id=%ld]", request_id);
+        swoole_error_log(SW_LOG_ERROR,
+                         SW_ERROR_SERVER_INVALID_COMMAND,
+                         "Invalid command result[request_id=%" PRId64 "]",
+                         request_id);
         return;
     }
     iter->second(this, result);
@@ -418,7 +420,7 @@ int Server::start_check() {
 
 int Server::start_master_thread() {
     SwooleTG.type = THREAD_MASTER;
-    SwooleTG.update_time = 1;
+    SwooleTG.id = single_thread ? 0 : reactor_num;
 
     Reactor *reactor = sw_reactor();
 
@@ -906,6 +908,20 @@ void Server::shutdown() {
             reactor->del(pipe_command->get_socket(true));
         }
         clear_timer();
+        if (max_wait_time > 0) {
+            time_t shutdown_time = std::time(nullptr);
+            auto fn = [shutdown_time, this](Reactor *reactor, size_t &) {
+                time_t now = std::time(nullptr);
+                if (now - shutdown_time > max_wait_time) {
+                    swoole_error_log(SW_LOG_WARNING,
+                                     SW_ERROR_SERVER_WORKER_EXIT_TIMEOUT,
+                                     "graceful shutdown failed, forced termination");
+                    reactor->running = false;
+                }
+                return true;
+            };
+            reactor->set_exit_condition(Reactor::EXIT_CONDITION_FORCED_TERMINATION, fn);
+        }
     }
 
     if (is_base_mode()) {
@@ -1233,23 +1249,12 @@ int Server::schedule_worker(int fd, SendData *data) {
         return conn->worker_id;
     } else if (dispatch_mode == DISPATCH_CO_REQ_LB) {
         return get_lowest_load_worker_id();
+    } else if (dispatch_mode == DISPATCH_CONCURRENT_LB) {
+        return get_lowest_concurrent_worker_id();
     }
     // deliver tasks to idle worker processes
     else {
-        uint32_t i;
-        bool found = false;
-        for (i = 0; i < worker_num + 1; i++) {
-            key = sw_atomic_fetch_add(&worker_round_id, 1) % worker_num;
-            if (workers[key].status == SW_WORKER_IDLE) {
-                found = true;
-                break;
-            }
-        }
-        if (sw_unlikely(!found)) {
-            scheduler_warning = true;
-        }
-        swoole_trace_log(SW_TRACE_SERVER, "schedule=%d, round=%d", key, worker_round_id);
-        return key;
+        return get_idle_worker_id();
     }
 
     return key % worker_num;
@@ -1490,6 +1495,13 @@ bool Server::sendfile(SessionId session_id, const char *file, uint32_t l_file, o
     struct stat file_stat;
     if (stat(req->filename, &file_stat) < 0) {
         swoole_error_log(SW_LOG_WARNING, SW_ERROR_SYSTEM_CALL_FAIL, "stat(%s) failed", req->filename);
+        return false;
+    }
+    if (!S_ISREG(file_stat.st_mode)) {
+        swoole_error_log(SW_LOG_WARNING,
+                         SW_ERROR_SERVER_IS_NOT_REGULAR_FILE,
+                         "the path[%s] given is not a regular file",
+                         req->filename);
         return false;
     }
     if (file_stat.st_size <= offset) {
@@ -1957,7 +1969,7 @@ _find_available_slot:
 }
 
 void Server::init_ipc_max_size() {
-#ifdef HAVE_KQUEUE
+#ifndef __linux__
     ipc_max_size = SW_IPC_MAX_SIZE;
 #else
     int bufsize;
@@ -1967,7 +1979,7 @@ void Server::init_ipc_max_size() {
     if (workers[0].pipe_master->get_option(SOL_SOCKET, SO_SNDBUF, &bufsize) != 0) {
         bufsize = SW_IPC_MAX_SIZE;
     }
-    ipc_max_size = bufsize - SW_DGRAM_HEADER_SIZE;
+    ipc_max_size = SW_MIN(bufsize, SW_IPC_BUFFER_MAX_SIZE) - SW_DGRAM_HEADER_SIZE;
 #endif
 }
 

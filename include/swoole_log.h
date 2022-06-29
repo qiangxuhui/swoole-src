@@ -10,7 +10,7 @@
   | to obtain it through the world-wide-web, please send a note to       |
   | license@swoole.com so we can mail you a copy immediately.            |
   +----------------------------------------------------------------------+
-  | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+  | Author: Tianfeng Han  <rango@swoole.com>                             |
   +----------------------------------------------------------------------+
 */
 
@@ -195,7 +195,7 @@ swoole::Logger *sw_logger();
                 hof += sprintf(hex + hof, "%02x ", (__data)[i] & 0xff);                                                \
                 sof += sprintf(str + sof, "%c", isprint((int) (__data)[i]) ? (__data)[i] : '.');                       \
             }                                                                                                          \
-            swoole_debug("| %08x | %-48s| %-16s |", of, hex, str);                                                     \
+            swoole_debug("| %08zx | %-48s| %-16s |", of, hex, str);                                                    \
         }                                                                                                              \
         swoole_debug("+----------+------------+-----------+-----------+------------+------------------+");             \
     } while (0)

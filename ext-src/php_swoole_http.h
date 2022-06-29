@@ -12,7 +12,7 @@
  | to obtain it through the world-wide-web, please send a note to       |
  | license@swoole.com so we can mail you a copy immediately.            |
  +----------------------------------------------------------------------+
- | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+ | Author: Tianfeng Han  <rango@swoole.com>                             |
  +----------------------------------------------------------------------+
  */
 
@@ -169,6 +169,7 @@ struct Context {
     char *current_form_data_name;
     size_t current_form_data_name_len;
     zval *current_multipart_header;
+    String *form_data_buffer;
 
     std::string upload_tmp_dir;
 
@@ -186,12 +187,21 @@ struct Context {
     void bind(coroutine::Socket *socket);
     void copy(Context *ctx);
     bool parse_form_data(const char *boundary_str, int boundary_len);
+    bool get_multipart_boundary(
+        const char *at, size_t length, size_t offset, char **out_boundary_str, int *out_boundary_len);
     size_t parse(const char *data, size_t length);
     bool set_header(const char *, size_t, zval *, bool);
     bool set_header(const char *, size_t, const char *, size_t, bool);
     void end(zval *zdata, zval *return_value);
+    bool send_file(const char *file, uint32_t l_file, off_t offset, size_t length);
     void send_trailer(zval *return_value);
     String *get_write_buffer();
+    void build_header(String *http_buffer, size_t body_length);
+    ssize_t build_trailer(String *http_buffer);
+
+    size_t get_content_length() {
+        return parser.content_length;
+    }
 
 #ifdef SW_HAVE_COMPRESSION
     void set_compression_method(const char *accept_encoding, size_t length);
@@ -200,8 +210,10 @@ struct Context {
 
 #ifdef SW_USE_HTTP2
     void http2_end(zval *zdata, zval *return_value);
+    bool http2_send_file(const char *file, uint32_t l_file, off_t offset, size_t length);
 #endif
 
+    bool is_available();
     void free();
 };
 
@@ -223,7 +235,7 @@ class Stream {
     ~Stream();
 
     bool send_header(size_t body_length, bool end_stream);
-    bool send_body(String *body, bool end_stream, size_t max_frame_size, off_t offset = 0, size_t length = 0);
+    bool send_body(const String *body, bool end_stream, size_t max_frame_size, off_t offset = 0, size_t length = 0);
     bool send_trailer();
 
     void reset(uint32_t error_code);
@@ -262,7 +274,6 @@ extern zend_class_entry *swoole_http_request_ce;
 extern zend_class_entry *swoole_http_response_ce;
 
 extern swoole::String *swoole_http_buffer;
-extern swoole::String *swoole_http_form_data_buffer;
 #ifdef SW_HAVE_COMPRESSION
 extern swoole::String *swoole_zlib_buffer;
 #endif
@@ -300,7 +311,7 @@ static inline bool swoole_http_has_crlf(const char *value, size_t length) {
     return false;
 }
 
-void swoole_http_parse_cookie(zval *array, const char *at, size_t length, bool url_decode = true);
+void swoole_http_parse_cookie(zval *array, const char *at, size_t length);
 
 swoole::http::Context *php_swoole_http_request_get_context(zval *zobject);
 void php_swoole_http_request_set_context(zval *zobject, swoole::http::Context *context);

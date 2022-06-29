@@ -10,7 +10,7 @@
   | to obtain it through the world-wide-web, please send a note to       |
   | license@swoole.com so we can mail you a copy immediately.            |
   +----------------------------------------------------------------------+
-  | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
+  | Author: Tianfeng Han  <rango@swoole.com>                             |
   +----------------------------------------------------------------------+
 */
 
@@ -64,6 +64,7 @@
     _(SW_ZEND_STR_IN_COROUTINE,             "in_coroutine") \
     _(SW_ZEND_STR_PRIVATE_DATA,             "private_data") \
     _(SW_ZEND_STR_CLASS_NAME_RESOLVER,      "Swoole\\NameResolver") \
+    _(SW_ZEND_STR_SOCKET,                   "socket") \
 
 typedef enum sw_zend_known_string_id {
 #define _SW_ZEND_STR_ID(id, str) id,
@@ -88,6 +89,7 @@ SW_API bool php_swoole_export_socket(zval *zobject, swoole::coroutine::Socket *_
 SW_API zend_object *php_swoole_dup_socket(int fd, enum swSocketType type);
 SW_API void php_swoole_init_socket_object(zval *zobject, swoole::coroutine::Socket *socket);
 SW_API swoole::coroutine::Socket *php_swoole_get_socket(zval *zobject);
+SW_API bool php_swoole_socket_is_closed(zval *zobject);
 #ifdef SW_USE_OPENSSL
 SW_API bool php_swoole_socket_set_ssl(swoole::coroutine::Socket *sock, zval *zset);
 #endif
@@ -119,10 +121,7 @@ static inline bool php_swoole_is_fatal_error() {
     return false;
 }
 
-ssize_t php_swoole_length_func(swoole::Protocol *protocol,
-                               swoole::network::Socket *_socket,
-                               const char *data,
-                               uint32_t length);
+ssize_t php_swoole_length_func(const swoole::Protocol *, swoole::network::Socket *, swoole::PacketLength *);
 
 #ifdef SW_HAVE_ZLIB
 #define php_swoole_websocket_frame_pack php_swoole_websocket_frame_pack_ex
@@ -453,12 +452,6 @@ static inline void assign_zend_string_by_val(zval *zdata, char *addr, size_t len
     zstr->len = length;
     ZVAL_STR(zdata, zstr);
 }
-
-#if PHP_VERSION_ID < 80000
-#define ZEND_STR_CONST
-#else
-#define ZEND_STR_CONST const
-#endif
 
 //-----------------------------------namespace end--------------------------------------------
 }  // namespace zend

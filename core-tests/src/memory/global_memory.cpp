@@ -13,7 +13,7 @@
   | @link     https://www.swoole.com/                                    |
   | @contact  team@swoole.com                                            |
   | @license  https://github.com/swoole/swoole-src/blob/master/LICENSE   |
-  | @author   Tianfeng Han  <mikan.tenny@gmail.com>                      |
+  | @Author   Tianfeng Han  <rango@swoole.com>                           |
   +----------------------------------------------------------------------+
 */
 
@@ -39,6 +39,7 @@ TEST(global_memory, alloc) {
     ASSERT_TRUE(ptr3);
 
     ASSERT_GT(pool->capacity(), 2 * 1024 * 1024 - 512);
+    ASSERT_GT(pool->get_memory_size(), 0);
 
     ASSERT_STREQ(ptr1, "hello, world, #1");
     ASSERT_STREQ(ptr2, "hello, world, #2");
